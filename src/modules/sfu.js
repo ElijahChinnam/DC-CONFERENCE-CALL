@@ -3,7 +3,7 @@ import { Device } from "mediasoup-client";
 import { io } from "socket.io-client";
 
 const SERVER_URL =
-  import.meta.env.VITE_SIGNALING_SERVER_URL || "http://192.168.29.110:8870";
+  import.meta.env.VITE_SIGNALING_SERVER_URL || "http://signaling-server.cluesteam.com";
 
 let socket = null;
 let device = null;
