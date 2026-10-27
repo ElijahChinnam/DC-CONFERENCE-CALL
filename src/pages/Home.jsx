@@ -7,8 +7,8 @@ function Home() {
 
   return (
     <div>
-      <div className='w-full h-screen flex justify-center items-center flex-col bg-radial-[at_50%_75%] from-sky-200 via-blue-400 to-blue-900 to-90%"'>
-        <h1 className='text-center text-blue-900 text-7xl font-bold text-shadow-md'>DC <span className='font-normal text-black'>Conference Call</span></h1>
+      <div className='w-full h-dvh flex justify-center items-center flex-col bg-radial-[at_50%_75%] from-sky-200 via-blue-400 to-blue-900 to-90%"'>
+        <h1 className='text-center text-blue-900 text-5xl md:text-7xl font-bold text-shadow-md'>DC <span className='font-normal text-black'>Conference Call</span></h1>
         <div className='rounded text-center shadow-lg px-5 m-5 bg-white/10 backdrop-filter backdrop-blur-lg'>
           <h1 className='text-2xl font-bold my-5'>Meeting Details</h1>
           <h1 className='text-xl mb-1'>DC Midweek Fellowship: Every Thursday at 07:00 PM IST</h1>

@@ -24,6 +24,11 @@ function Room() {
   const [remoteTracks, setRemoteTracks] = useState([]);
   const [connectionError, setConnectionError] = useState("");
 
+  const [gridCols, setGridCols] = useState([1, 1, 2, 2, 2, 3, 3, 3, 4, 3, 4]);
+  const [gridRows, setGridRows] = useState([1, 1, 1, 2, 2, 2, 2, 3, 2, 3, 3]);
+
+  const index = Math.min(remoteTracks.length, gridCols.length - 1);
+
   const navigate = useNavigate();
 
   const socket = useContext(SocketContext);
@@ -197,9 +202,13 @@ function Room() {
   }, [username, myStream]);
 
   return (
-    <div className='w-screen h-screen flex flex-col bg-gray-900'>
-      <div className='grow relative p-2 bg-blue-950'>
-        <div className='w-full h-full grid grid-cols-3 gap-2'>
+    <div className='w-dvw h-dvh flex flex-col bg-gray-900'>
+      <div className='flex-1 min-h-0 min-w-0 relative p-2 bg-blue-950'>
+        <div className='w-full h-full relative min-h-0 min-w-0 overflow-hidden grid gap-2'
+          style={{
+            gridTemplateColumns: `repeat(${gridCols[index]}, minmax(0, 1fr))`,
+            gridTemplateRows: `repeat(${gridRows[index]}, minmax(0, 1fr))`,
+          }}>
           {remoteTracks.map((participant) => (
             <VideoCard
               key={participant.peerId}

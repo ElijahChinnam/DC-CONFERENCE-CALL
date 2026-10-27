@@ -12,7 +12,7 @@ import { io } from "socket.io-client";
 
 function App() {
 
-  const [username, setUsername] = useState('ELIJAH');
+  const [username, setUsername] = useState('');
   const [isMicOn, setIsMicOn] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [myStream, setMyStream] = useState(null);
