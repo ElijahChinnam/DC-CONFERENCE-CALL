@@ -8,6 +8,8 @@ import { IoMdMic } from "react-icons/io";
 import { IoMdMicOff } from "react-icons/io";
 import { BsCameraVideoFill } from "react-icons/bs";
 import { BsCameraVideoOffFill } from "react-icons/bs";
+import { IoIosArrowUp } from "react-icons/io";
+import { isMobile, isTablet, isDesktop, deviceType } from "react-device-detect";
 
 function Lobby() {
 
@@ -17,26 +19,43 @@ function Lobby() {
   const { isMicOn, setIsMicOn } = useContext(MicContext);
   const { isCameraOn, setIsCameraOn } = useContext(CameraContext);
   const { myStream, setMyStream } = useContext(MyStreamContext);
+  const [rememberName, setRememberName] = useState(true);
+  const [orientation, setOrientation] = useState(null);
+  const [isMicOptionsOpen, setIsMicOptionsOpen] = useState(false);
+  const [isCamOptionsOpen, setIsCamOptionsOpen] = useState(false);
+  const [audioInputs, setAudioInputs] = useState([]);
+  const [audioOutputs, setAudioOutputs] = useState([]);
+  const [videoInputs, setVideoInputs] = useState([]);
+
+  const [selectedMicId, setSelectedMicId] = useState("");
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState("");
+  const [selectedCameraId, setSelectedCameraId] = useState("");
+
+  const [deviceError, setDeviceError] = useState("");
+
+  const micDropdownRef = useRef(null);
+  const camDropdownRef = useRef(null);
 
   const videoRef = useRef(null);
 
   useEffect(() => {
-    let stream;
+    let active = true;
 
-    async function startCamera() {
+    async function initializeDevices() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
+        // Request permission so browsers can reveal device labels.
+        const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true,
         });
 
-        setMyStream(stream);
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+        if (!active) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
         }
 
-        // Apply the current mic and camera settings
+        setMyStream(stream);
+
         stream.getVideoTracks().forEach((track) => {
           track.enabled = isCameraOn;
         });
@@ -45,17 +64,209 @@ function Lobby() {
           track.enabled = isMicOn;
         });
 
+        setSelectedCameraId(
+          stream.getVideoTracks()[0]?.getSettings().deviceId || ""
+        );
+
+        setSelectedMicId(
+          stream.getAudioTracks()[0]?.getSettings().deviceId || ""
+        );
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+
+        if (!active) return;
+
+        setAudioInputs(devices.filter((d) => d.kind === "audioinput"));
+        setAudioOutputs(devices.filter((d) => d.kind === "audiooutput"));
+        setVideoInputs(devices.filter((d) => d.kind === "videoinput"));
+
+        const savedSpeaker = localStorage.getItem("speakerDeviceId");
+        if (savedSpeaker && devices.some(
+          (d) => d.kind === "audiooutput" && d.deviceId === savedSpeaker
+        )) {
+          setSelectedSpeakerId(savedSpeaker);
+        } else {
+          setSelectedSpeakerId(
+            devices.find((d) => d.kind === "audiooutput")?.deviceId || ""
+          );
+        }
+
+        setDeviceError("");
       } catch (error) {
-        console.error("Camera or microphone access failed:", error);
+        console.error("Device initialization failed:", error);
+        setDeviceError(
+          "Allow camera and microphone access to select your devices."
+        );
       }
     }
 
-    startCamera();
+    initializeDevices();
 
-    // return () => {
-    //   stream?.getTracks().forEach((track) => track.stop());
-    // };
-  }, [isCameraOn]);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    myStream?.getVideoTracks().forEach((track) => {
+      track.enabled = isCameraOn;
+    });
+
+    myStream?.getAudioTracks().forEach((track) => {
+      track.enabled = isMicOn;
+    });
+  }, [myStream, isCameraOn, isMicOn]);
+
+  useEffect(() => {
+    const storedName = localStorage.getItem("username");
+    if (storedName) {
+      setUsername(storedName);
+      setRememberName(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !myStream) return;
+
+    video.srcObject = myStream;
+
+    const checkOrientation = () => {
+      if (!video.videoWidth || !video.videoHeight) return;
+
+      setOrientation(
+        video.videoHeight > video.videoWidth
+          ? "vertical"
+          : "horizontal"
+      );
+    };
+
+    video.addEventListener("loadedmetadata", checkOrientation);
+    video.addEventListener("resize", checkOrientation);
+
+    video.play().catch((error) => {
+      console.error("Video preview playback failed:", error);
+    });
+
+    if (video.readyState >= 1) {
+      checkOrientation();
+    }
+
+    return () => {
+      video.removeEventListener("loadedmetadata", checkOrientation);
+      video.removeEventListener("resize", checkOrientation);
+    };
+  }, [myStream, isCameraOn]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        micDropdownRef.current &&
+        !micDropdownRef.current.contains(event.target)
+      ) {
+        setIsMicOptionsOpen(false);
+      }
+
+      if (
+        camDropdownRef.current &&
+        !camDropdownRef.current.contains(event.target)
+      ) {
+        setIsCamOptionsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const refreshDevices = async () => {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+
+    setAudioInputs(devices.filter((d) => d.kind === "audioinput"));
+    setAudioOutputs(devices.filter((d) => d.kind === "audiooutput"));
+    setVideoInputs(devices.filter((d) => d.kind === "videoinput"));
+  };
+
+  const handleMicChange = async (deviceId) => {
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: deviceId } },
+        video: false,
+      });
+
+      const newTrack = newStream.getAudioTracks()[0];
+      if (!newTrack) throw new Error("Microphone could not be started.");
+
+      newTrack.enabled = isMicOn;
+
+      const oldTrack = myStream?.getAudioTracks()[0];
+      if (oldTrack) {
+        myStream.removeTrack(oldTrack);
+        oldTrack.stop();
+      }
+
+      myStream?.addTrack(newTrack);
+      setMyStream(myStream);
+      setSelectedMicId(deviceId);
+      setDeviceError("");
+      await refreshDevices();
+    } catch (error) {
+      console.error("Microphone selection failed:", error);
+      setDeviceError("Could not switch microphone. Check its permissions.");
+    }
+  };
+
+  const handleCameraChange = async (deviceId) => {
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } },
+        audio: false,
+      });
+
+      const newTrack = newStream.getVideoTracks()[0];
+
+      if (!newTrack) {
+        throw new Error("Camera could not be started.");
+      }
+
+      newTrack.enabled = isCameraOn;
+
+      const currentStream = myStream;
+
+      if (currentStream) {
+        currentStream.getVideoTracks().forEach((track) => {
+          currentStream.removeTrack(track);
+          track.stop();
+        });
+
+        currentStream.addTrack(newTrack);
+        setMyStream(currentStream);
+      } else {
+        setMyStream(newStream);
+      }
+
+      setSelectedCameraId(deviceId);
+      setDeviceError("");
+      await refreshDevices();
+    } catch (error) {
+      console.error("Camera selection failed:", error);
+      setDeviceError(
+        `Could not switch camera: ${error.message}`
+      );
+    }
+  };
+
+  const handleSpeakerChange = (deviceId) => {
+    setSelectedSpeakerId(deviceId);
+    localStorage.setItem("speakerDeviceId", deviceId);
+  };
 
   const handleMicToggle = () => {
     setIsMicOn(!isMicOn);
@@ -65,13 +276,20 @@ function Lobby() {
     setIsCameraOn(!isCameraOn);
   }
 
+  const handleJoin = () => {
+    if (rememberName) {
+      localStorage.setItem("username", username);
+    } else {
+      localStorage.removeItem("username");
+    }
+
+    navigate('/room');
+  };
+
   return (
     <div className='w-dvw h-dvh p-5 flex justify-center items-center flex-col gap-5 bg-radial-[at_50%_75%] from-sky-200 via-blue-400 to-blue-900 to-90%'>
-      <h1 className='text-center text-blue-900 text-2xl font-bold text-shadow-lg'>
-        DC
-        <span className='text-black text-shadow-lg'>
-          Conference Call
-        </span>
+      <h1 className='text-center text-blue-900 text-2xl sm:text-3xl md:text-5xl font-bold text-shadow-lg'>
+        Disciples Church <span className='text-black text-shadow-lg'>Meet</span>
       </h1>
       <form
         onSubmit={(event) => { event.preventDefault(); }}
@@ -79,20 +297,27 @@ function Lobby() {
       >
         <div className='w-full h-full flex gap-5 items-center flex-col sm:flex-col md:flex-row'>
           <div className='w-full sm:w-auto'>
-            <div className='w-full sm:w-160 sm:h-90 h-50 border border-white rounded'>
-              {
-                isCameraOn
-                  ?
-                  <video className='w-full h-full object-cover rounded' ref={videoRef} autoPlay muted></video>
-                  :
-                  <div className='w-full h-full bg-black text-white flex justify-center items-center text-3xl rounded'><BsCameraVideoOffFill /></div>
-              }
+            <div className="w-full sm:w-160 sm:h-90 h-50 border border-white rounded bg-black overflow-hidden">
+              {isCameraOn ? (
+                <video
+                  ref={videoRef}
+                  className={`w-full h-full rounded ${orientation === "vertical" ? "object-contain" : "object-cover"
+                    }`}
+                  autoPlay
+                  muted
+                  playsInline
+                />
+              ) : (
+                <div className="w-full h-full bg-black text-white flex justify-center items-center text-3xl rounded">
+                  <BsCameraVideoOffFill />
+                </div>
+              )}
             </div>
             <br />
             <div className='w-full flex justify-center mb-5'>
-              <div className='w-1/2 flex justify-center'>
+              <div ref={micDropdownRef} className='w-1/2 flex justify-center'>
                 <button
-                  className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer'
+                  className='text-2xl p-2 bg-blue-900 text-white rounded-l border-r hover:cursor-pointer'
                   onClick={handleMicToggle}
                 >
                   {
@@ -103,10 +328,70 @@ function Lobby() {
                       <IoMdMic />
                   }
                 </button>
+                <div className="relative inline-block">
+                  {/* Dropdown list */}
+                  {isMicOptionsOpen && (
+                    <div className="absolute bottom-full mb-2 left-0 w-64 bg-white
+  rounded-lg shadow-lg border border-gray-200 z-50 p-3 space-y-3">
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">
+                          Microphone input
+                        </label>
+
+                        <select
+                          className="w-full border rounded p-2 text-sm text-gray-800"
+                          value={selectedMicId}
+                          onChange={(e) => handleMicChange(e.target.value)}
+                        >
+                          {audioInputs.map((device, index) => (
+                            <option key={device.deviceId} value={device.deviceId}>
+                              {device.label || `Microphone ${index + 1}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">
+                          Speaker output
+                        </label>
+
+                        <select
+                          className="w-full border rounded p-2 text-sm text-gray-800"
+                          value={selectedSpeakerId}
+                          onChange={(e) => handleSpeakerChange(e.target.value)}
+                        >
+                          {audioOutputs.map((device, index) => (
+                            <option key={device.deviceId} value={device.deviceId}>
+                              {device.label || `Speaker ${index + 1}`}
+                            </option>
+                          ))}
+                        </select>
+
+                        {!audioOutputs.length && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            No speaker devices found.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Toggle button */}
+                  <button
+                    onClick={() => setIsMicOptionsOpen(!isMicOptionsOpen)}
+                    aria-expanded={isMicOptionsOpen}
+                    className="text-2xl p-2 bg-blue-900 text-white rounded-r
+                   hover:cursor-pointer"
+                  >
+                    <IoIosArrowUp />
+                  </button>
+                </div>
               </div>
-              <div className='w-1/2 flex justify-center'>
+              <div ref={camDropdownRef} className='w-1/2 flex justify-center'>
                 <button
-                  className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer'
+                  className='text-2xl p-2 bg-blue-900 text-white rounded-l border-r hover:cursor-pointer'
                   onClick={handleCameraToggle}
                 >{
                     !isCameraOn
@@ -116,8 +401,53 @@ function Lobby() {
                       <BsCameraVideoFill />
                   }
                 </button>
+                <div className="relative inline-block">
+                  {/* Dropdown list */}
+                  {isCamOptionsOpen && (
+                    <div className="absolute bottom-full mb-2 right-0 w-64 bg-white
+  rounded-lg shadow-lg border border-gray-200 z-50 p-3">
+
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">
+                        Camera input
+                      </label>
+
+                      <select
+                        className="w-full border rounded p-2 text-sm text-gray-800"
+                        value={selectedCameraId}
+                        onChange={(e) => handleCameraChange(e.target.value)}
+                      >
+                        {videoInputs.map((device, index) => (
+                          <option key={device.deviceId} value={device.deviceId}>
+                            {device.label || `Camera ${index + 1}`}
+                          </option>
+                        ))}
+                      </select>
+
+                      {!videoInputs.length && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          No cameras found.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Toggle button */}
+                  <button
+                    onClick={() => setIsCamOptionsOpen(!isCamOptionsOpen)}
+                    aria-expanded={isCamOptionsOpen}
+                    className="text-2xl p-2 bg-blue-900 text-white rounded-r
+                   hover:cursor-pointer"
+                  >
+                    <IoIosArrowUp />
+                  </button>
+                </div>
               </div>
             </div>
+            {deviceError && (
+              <p className="text-sm text-red-200 text-center mb-3">
+                {deviceError}
+              </p>
+            )}
           </div>
           <div>
             <label className='text-xl font-bold'>
@@ -132,12 +462,23 @@ function Lobby() {
               onChange={(event) => { setUsername(event.target.value) }}
             />
             <br />
+            <div className='md:flex'>
+              <input
+                type="checkbox"
+                name="remember"
+                id="remember"
+                checked={rememberName}
+                onChange={(event) => setRememberName(event.target.checked)}
+              />
+              <p>Remember my name for future meetings</p>
+            </div>
+            <br />
             {/* <label className='text-xl font-bold'>Enter Room Number</label><br />
         <input type="text" placeholder='Room ID' className='border mb-5 w-full rounded text-xl px-2' /><br /> */}
             <button
               type='submit'
               className='rounded w-full bg-blue-900 text-white hover:cursor-pointer hover:bg-blue-950 py-1'
-              onClick={() => navigate('/room')}
+              onClick={handleJoin}
             >
               Join
             </button>

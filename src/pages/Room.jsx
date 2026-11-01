@@ -7,12 +7,17 @@ import { IoMdMic } from "react-icons/io";
 import { IoMdMicOff } from "react-icons/io";
 import { BsCameraVideoFill } from "react-icons/bs";
 import { BsCameraVideoOffFill } from "react-icons/bs";
+import { IoMdSettings } from "react-icons/io";
 import { MdCallEnd } from "react-icons/md";
 import { useNavigate } from 'react-router-dom';
 import { LuScreenShare } from "react-icons/lu";
 import SocketContext from '../contexts/SocketContext';
 import VideoCard from '../components/VideoCard';
-import { joinConference, leaveConference } from "../modules/sfu";
+import {
+  joinConference,
+  leaveConference,
+  replaceLocalTrack,
+} from "../modules/sfu";
 
 function Room() {
 
@@ -23,9 +28,23 @@ function Room() {
 
   const [remoteTracks, setRemoteTracks] = useState([]);
   const [connectionError, setConnectionError] = useState("");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const [audioInputs, setAudioInputs] = useState([]);
+  const [audioOutputs, setAudioOutputs] = useState([]);
+  const [videoInputs, setVideoInputs] = useState([]);
+
+  const [selectedMicId, setSelectedMicId] = useState("");
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState("");
+  const [selectedCameraId, setSelectedCameraId] = useState("");
+
+  const [deviceError, setDeviceError] = useState("");
 
   const [gridCols, setGridCols] = useState([1, 1, 2, 2, 2, 3, 3, 3, 4, 3, 4]);
   const [gridRows, setGridRows] = useState([1, 1, 1, 2, 2, 2, 2, 3, 2, 3, 3]);
+
+  const [gridMobileCols, setMobileGridCols] = useState([1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2]);
+  const [gridMobileRows, setMobileGridRows] = useState([1, 1, 2, 3, 4, 3, 3, 4, 4, 4, 4]);
 
   const index = Math.min(remoteTracks.length, gridCols.length - 1);
 
@@ -201,14 +220,178 @@ function Room() {
     };
   }, [username, myStream]);
 
+  // Load available camera, microphone, and speaker devices
+  const refreshDevices = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+
+      setAudioInputs(devices.filter((d) => d.kind === "audioinput"));
+      setAudioOutputs(devices.filter((d) => d.kind === "audiooutput"));
+      setVideoInputs(devices.filter((d) => d.kind === "videoinput"));
+    } catch (error) {
+      console.error("Could not load devices:", error);
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    const loadDevices = async () => {
+      try {
+        await refreshDevices();
+
+        if (!active) return;
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+
+        setSelectedCameraId(
+          myStream?.getVideoTracks()[0]?.getSettings().deviceId ||
+          devices.find((d) => d.kind === "videoinput")?.deviceId ||
+          ""
+        );
+
+        setSelectedMicId(
+          myStream?.getAudioTracks()[0]?.getSettings().deviceId ||
+          devices.find((d) => d.kind === "audioinput")?.deviceId ||
+          ""
+        );
+
+        const savedSpeaker = localStorage.getItem("speakerDeviceId");
+        const validSpeaker = devices.find(
+          (d) => d.kind === "audiooutput" && d.deviceId === savedSpeaker
+        );
+
+        setSelectedSpeakerId(
+          validSpeaker?.deviceId ||
+          devices.find((d) => d.kind === "audiooutput")?.deviceId ||
+          ""
+        );
+      } catch (error) {
+        console.error("Device loading failed:", error);
+      }
+    };
+
+    loadDevices();
+
+    return () => {
+      active = false;
+    };
+  }, [myStream]);
+
+  // Switch microphone
+  const handleMicChange = async (deviceId) => {
+    let newStream;
+
+    try {
+      newStream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: deviceId } },
+        video: false,
+      });
+
+      const newTrack = newStream.getAudioTracks()[0];
+
+      if (!newTrack) {
+        throw new Error("No microphone track was created.");
+      }
+
+      newTrack.enabled = isMicOn;
+
+      // Update the mediasoup producer as well as the local stream
+      await replaceLocalTrack("audio", newTrack);
+
+      const updatedStream = new MediaStream([
+        ...(myStream?.getVideoTracks() || []),
+        newTrack,
+      ]);
+
+      myStream?.getAudioTracks().forEach((track) => track.stop());
+
+      setMyStream(updatedStream);
+      setSelectedMicId(deviceId);
+      setDeviceError("");
+      await refreshDevices();
+    } catch (error) {
+      newStream?.getTracks().forEach((track) => track.stop());
+      console.error("Microphone switch failed:", error);
+      setDeviceError("Could not switch microphone. Check its permissions.");
+    }
+  };
+
+  // Switch camera
+  const handleCameraChange = async (deviceId) => {
+    let newStream;
+
+    try {
+      newStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } },
+        audio: false,
+      });
+
+      const newTrack = newStream.getVideoTracks()[0];
+
+      if (!newTrack) {
+        throw new Error("No camera track was created.");
+      }
+
+      newTrack.enabled = isCameraOn;
+
+      // Update the mediasoup producer as well as the local stream
+      await replaceLocalTrack("video", newTrack);
+
+      const updatedStream = new MediaStream([
+        newTrack,
+        ...(myStream?.getAudioTracks() || []),
+      ]);
+
+      myStream?.getVideoTracks().forEach((track) => track.stop());
+
+      setMyStream(updatedStream);
+      setSelectedCameraId(deviceId);
+      setDeviceError("");
+      await refreshDevices();
+    } catch (error) {
+      newStream?.getTracks().forEach((track) => track.stop());
+      console.error("Camera switch failed:", error);
+      setDeviceError("Could not switch camera. Check its permissions.");
+    }
+  };
+
+  // Switch speaker output
+  const handleSpeakerChange = async (deviceId) => {
+    try {
+      const mediaElements = document.querySelectorAll("video, audio");
+
+      for (const element of mediaElements) {
+        if (typeof element.setSinkId === "function") {
+          await element.setSinkId(deviceId);
+        }
+      }
+
+      setSelectedSpeakerId(deviceId);
+      localStorage.setItem("speakerDeviceId", deviceId);
+      setDeviceError("");
+    } catch (error) {
+      console.error("Speaker switch failed:", error);
+      setDeviceError("Could not switch speaker on this browser.");
+    }
+  };
+
   return (
     <div className='w-dvw h-dvh flex flex-col bg-gray-900'>
-      <div className='flex-1 min-h-0 min-w-0 relative p-2 bg-blue-950'>
-        <div className='w-full h-full relative min-h-0 min-w-0 overflow-hidden grid gap-2'
+      <div className='flex-1 min-h-0 min-w-0 relative p-2 md:px-30 bg-blue-950'>
+        <div className="w-full h-full relative min-h-0 min-w-0 overflow-hidden grid gap-2"
           style={{
-            gridTemplateColumns: `repeat(${gridCols[index]}, minmax(0, 1fr))`,
-            gridTemplateRows: `repeat(${gridRows[index]}, minmax(0, 1fr))`,
-          }}>
+            gridTemplateColumns: `repeat(${window.innerWidth < 640
+                ? gridMobileCols[index + 1]
+                : gridCols[index + 1]
+              }, minmax(0, 1fr))`,
+
+            gridTemplateRows: `repeat(${window.innerWidth < 640
+                ? gridMobileRows[index + 1]
+                : gridRows[index + 1]
+              }, minmax(0, 1fr))`,
+          }}
+        >
           {remoteTracks.map((participant) => (
             <VideoCard
               key={participant.peerId}
@@ -216,8 +399,13 @@ function Room() {
               stream={participant.stream}
             />
           ))}
+          <VideoCard
+            key={"local"}
+            username={username}
+            stream={myStream}
+          />
         </div>
-        <div className='w-64 h-36 absolute bottom-2 right-2 rounded'>
+        {/* <div className='w-64 h-36 absolute bottom-2 right-2 rounded'>
           {
             isCameraOn ?
               <video ref={videoRef} autoPlay muted className='w-full h-full object-cover rounded'></video> :
@@ -227,18 +415,143 @@ function Room() {
             {isMicOn ? <></> : <IoMdMicOff className='text-red-500' />}
             <p>{username}</p>
           </div>
-        </div>
+        </div> */}
       </div>
       <div className='w-full h-16 flex justify-center my-2'>
         <div className='flex justify-center gap-5 bg-gray-300 p-3 rounded'>
           <button className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer hover:bg-blue-950' onClick={handleMicToggle}>{!isMicOn ? <IoMdMicOff /> : <IoMdMic />}</button>
           <button className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer hover:bg-blue-950' onClick={handleCameraToggle}>{!isCameraOn ? <BsCameraVideoOffFill /> : <BsCameraVideoFill />}</button>
           <button className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer hover:bg-blue-950' ><LuScreenShare /></button>
+          <button type="button" title="Settings" onClick={() => setIsSettingsOpen(true)} className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer hover:bg-blue-950' ><IoMdSettings /></button>
           <button className='text-2xl p-2 bg-red-500 text-white rounded hover:cursor-pointer hover:bg-red-900' onClick={handleCallEnd}><MdCallEnd /></button>
+          {isSettingsOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  setIsSettingsOpen(false);
+                }
+              }}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="settings-title"
+                className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+              >
+                <div className="mb-6 flex items-center justify-between">
+                  <h2
+                    id="settings-title"
+                    className="text-xl font-semibold text-gray-900"
+                  >
+                    Device Settings
+                  </h2>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsOpen(false)}
+                    aria-label="Close settings"
+                    className="rounded px-3 py-1 text-2xl text-gray-600 hover:bg-gray-100"
+                  >
+                    &times;
+                  </button>
+                </div>
+
+                <div className="space-y-5">
+                  {/* Camera input */}
+                  <div>
+                    <label className="mb-2 block font-medium text-gray-800">
+                      Camera Input
+                    </label>
+
+                    <select
+                      value={selectedCameraId}
+                      onChange={(event) => handleCameraChange(event.target.value)}
+                      className="w-full rounded-lg border border-gray-300 bg-white p-3 text-gray-900 outline-none focus:border-blue-600"
+                    >
+                      {videoInputs.length === 0 && (
+                        <option value="">No cameras found</option>
+                      )}
+
+                      {videoInputs.map((device, index) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || `Camera ${index + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Microphone input */}
+                  <div>
+                    <label className="mb-2 block font-medium text-gray-800">
+                      Audio Input (Microphone)
+                    </label>
+
+                    <select
+                      value={selectedMicId}
+                      onChange={(event) => handleMicChange(event.target.value)}
+                      className="w-full rounded-lg border border-gray-300 bg-white p-3 text-gray-900 outline-none focus:border-blue-600"
+                    >
+                      {audioInputs.length === 0 && (
+                        <option value="">No microphones found</option>
+                      )}
+
+                      {audioInputs.map((device, index) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || `Microphone ${index + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Speaker output */}
+                  <div>
+                    <label className="mb-2 block font-medium text-gray-800">
+                      Audio Output (Speaker)
+                    </label>
+
+                    <select
+                      value={selectedSpeakerId}
+                      onChange={(event) => handleSpeakerChange(event.target.value)}
+                      className="w-full rounded-lg border border-gray-300 bg-white p-3 text-gray-900 outline-none focus:border-blue-600"
+                    >
+                      {audioOutputs.length === 0 && (
+                        <option value="">No speakers found</option>
+                      )}
+
+                      {audioOutputs.map((device, index) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || `Speaker ${index + 1}`}
+                        </option>
+                      ))}
+                    </select>
+
+                    <p className="mt-1 text-xs text-gray-500">
+                      Speaker selection depends on browser support.
+                    </p>
+                  </div>
+
+                  {deviceError && (
+                    <p role="alert" className="text-sm text-red-600">
+                      {deviceError}
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="mt-6 w-full rounded-lg bg-blue-900 px-4 py-3 font-medium text-white hover:bg-blue-950"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
   )
 }
 
-export default Room;
+export default Room;  

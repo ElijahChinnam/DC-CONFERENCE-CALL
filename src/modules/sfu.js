@@ -1,9 +1,7 @@
-
 import { Device } from "mediasoup-client";
 import { io } from "socket.io-client";
 
-const SERVER_URL =
-  import.meta.env.VITE_SIGNALING_SERVER_URL || "https://signaling-server.cluesteam.com";
+const SERVER_URL = import.meta.env.VITE_SIGNALING_SERVER_URL || "https://signaling-server.cluesteam.com";
 
 let socket = null;
 let device = null;
@@ -11,6 +9,15 @@ let sendTransport = null;
 let recvTransport = null;
 
 let localProducers = new Map();
+export async function replaceLocalTrack(kind, newTrack) {
+  const producer = localProducers.get(kind);
+
+  if (!producer || producer.closed) {
+    throw new Error(`No active ${kind} producer found.`);
+  }
+
+  await producer.replaceTrack({ track: newTrack });
+}
 let remoteConsumers = new Map();
 let peerInfo = new Map();
 let callbacks = {};
