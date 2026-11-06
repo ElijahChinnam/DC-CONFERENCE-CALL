@@ -8,6 +8,7 @@ import MicContext from './contexts/MicContext';
 import CameraContext from './contexts/CameraContext';
 import MyStreamContext from './contexts/MyStreamContext';
 import SocketContext from './contexts/SocketContext';
+import HostContext from './contexts/HostContext';
 import { io } from "socket.io-client";
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
   const [isMicOn, setIsMicOn] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [myStream, setMyStream] = useState(null);
+  const [isHost, setIsHost] = useState(false);
 
   // const socket = useMemo(() => io("ws://localhost:3000"), []);
   const socket = 10;
@@ -28,23 +30,25 @@ function App() {
   // );
 
   return (
-    <SocketContext.Provider value={socket}>
-      <MyStreamContext.Provider value={{ myStream, setMyStream }}>
-        <UserContext.Provider value={{ username, setUsername }}>
-          <MicContext.Provider value={{ isMicOn, setIsMicOn }}>
-            <CameraContext.Provider value={{ isCameraOn, setIsCameraOn }}>
-              <BrowserRouter>
-                <Routes>
-                  <Route path="/" element={<Home />} />
-                  <Route path="/lobby" element={<Lobby />} />
-                  <Route path="/room" element={<Room />} />
-                </Routes>
-              </BrowserRouter>
-            </CameraContext.Provider>
-          </MicContext.Provider>
-        </UserContext.Provider >
-      </MyStreamContext.Provider>
-    </SocketContext.Provider>
+    <HostContext.Provider value={{ isHost, setIsHost }}>
+      <SocketContext.Provider value={socket}>
+        <MyStreamContext.Provider value={{ myStream, setMyStream }}>
+          <UserContext.Provider value={{ username, setUsername }}>
+            <MicContext.Provider value={{ isMicOn, setIsMicOn }}>
+              <CameraContext.Provider value={{ isCameraOn, setIsCameraOn }}>
+                <BrowserRouter>
+                  <Routes>
+                    <Route path="/" element={<Home />} />
+                    <Route path="/lobby" element={<Lobby />} />
+                    <Route path="/room" element={<Room />} />
+                  </Routes>
+                </BrowserRouter>
+              </CameraContext.Provider>
+            </MicContext.Provider>
+          </UserContext.Provider >
+        </MyStreamContext.Provider>
+      </SocketContext.Provider>
+    </HostContext.Provider>
   )
 }
 

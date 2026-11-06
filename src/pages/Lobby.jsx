@@ -4,12 +4,14 @@ import UserContext from '../contexts/UserContext';
 import MicContext from '../contexts/MicContext';
 import CameraContext from '../contexts/CameraContext';
 import MyStreamContext from '../contexts/MyStreamContext';
+import HostContext from '../contexts/HostContext';
 import { IoMdMic } from "react-icons/io";
 import { IoMdMicOff } from "react-icons/io";
 import { BsCameraVideoFill } from "react-icons/bs";
 import { BsCameraVideoOffFill } from "react-icons/bs";
 import { IoIosArrowUp } from "react-icons/io";
 import { isMobile, isTablet, isDesktop, deviceType } from "react-device-detect";
+import bcrypt from 'bcryptjs';
 
 function Lobby() {
 
@@ -19,10 +21,14 @@ function Lobby() {
   const { isMicOn, setIsMicOn } = useContext(MicContext);
   const { isCameraOn, setIsCameraOn } = useContext(CameraContext);
   const { myStream, setMyStream } = useContext(MyStreamContext);
+  const { isHost, setIsHost } = useContext(HostContext);
   const [rememberName, setRememberName] = useState(true);
   const [orientation, setOrientation] = useState(null);
   const [isMicOptionsOpen, setIsMicOptionsOpen] = useState(false);
   const [isCamOptionsOpen, setIsCamOptionsOpen] = useState(false);
+  const [isHostPasswordOpen, setIsHostPasswordOpen] = useState(false);
+  const [hostPassword, setHostPassword] = useState("");
+  const [hostPasswordError, setHostPasswordError] = useState("");
   const [audioInputs, setAudioInputs] = useState([]);
   const [audioOutputs, setAudioOutputs] = useState([]);
   const [videoInputs, setVideoInputs] = useState([]);
@@ -286,6 +292,29 @@ function Lobby() {
     navigate('/room');
   };
 
+  const handleJoinAsHost = () => {
+    setHostPassword("");
+    setHostPasswordError("");
+    setIsHostPasswordOpen(true);
+  };
+
+  const handleHostPasswordSubmit = async (event) => {
+    event.preventDefault();
+
+    const authenticated = await bcrypt.compare(hostPassword, "$2b$10$6uquSZ9NAg5csfnpSqd1helD2E.pOVClDxPws7JBLA47Jcwus033a", );
+
+    if (!authenticated) {
+      setHostPasswordError("Incorrect password. Please try again.");
+      return;
+    }
+
+    setIsHost(true);
+    setIsHostPasswordOpen(false);
+    setHostPasswordError("");
+
+    handleJoin();
+  };
+
   return (
     <div className='w-dvw h-dvh p-5 flex justify-center items-center flex-col gap-5 bg-radial-[at_50%_75%] from-sky-200 via-blue-400 to-blue-900 to-90%'>
       <h1 className='text-center text-blue-900 text-2xl sm:text-3xl md:text-5xl font-bold text-shadow-lg'>
@@ -317,7 +346,7 @@ function Lobby() {
             <div className='w-full flex justify-center mb-5'>
               <div ref={micDropdownRef} className='w-1/2 flex justify-center'>
                 <button
-                  className='text-2xl p-2 bg-blue-900 text-white rounded-l border-r hover:cursor-pointer'
+                  className='text-2xl p-2 bg-blue-900 text-white rounded-l border-r hover:cursor-pointer hover:bg-blue-950'
                   onClick={handleMicToggle}
                 >
                   {
@@ -383,7 +412,7 @@ function Lobby() {
                     onClick={() => setIsMicOptionsOpen(!isMicOptionsOpen)}
                     aria-expanded={isMicOptionsOpen}
                     className="text-2xl p-2 bg-blue-900 text-white rounded-r
-                   hover:cursor-pointer"
+                   hover:cursor-pointer hover:bg-blue-950"
                   >
                     <IoIosArrowUp />
                   </button>
@@ -391,7 +420,7 @@ function Lobby() {
               </div>
               <div ref={camDropdownRef} className='w-1/2 flex justify-center'>
                 <button
-                  className='text-2xl p-2 bg-blue-900 text-white rounded-l border-r hover:cursor-pointer'
+                  className='text-2xl p-2 bg-blue-900 text-white rounded-l border-r hover:cursor-pointer hover:bg-blue-950'
                   onClick={handleCameraToggle}
                 >{
                     !isCameraOn
@@ -436,7 +465,7 @@ function Lobby() {
                     onClick={() => setIsCamOptionsOpen(!isCamOptionsOpen)}
                     aria-expanded={isCamOptionsOpen}
                     className="text-2xl p-2 bg-blue-900 text-white rounded-r
-                   hover:cursor-pointer"
+                   hover:cursor-pointer hover:bg-blue-950"
                   >
                     <IoIosArrowUp />
                   </button>
@@ -482,9 +511,112 @@ function Lobby() {
             >
               Join
             </button>
+            <button
+              type='submit'
+              className='rounded w-full bg-blue-900 text-white hover:cursor-pointer hover:bg-blue-950 py-1 mt-1'
+              onClick={handleJoinAsHost}
+            >
+              Join as Host
+            </button>
           </div>
         </div>
       </form>
+      {isHostPasswordOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsHostPasswordOpen(false);
+              setHostPasswordError("");
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="host-password-title"
+            className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+          >
+            {/* Modal Header */}
+            <div className="mb-6 flex items-center justify-between">
+              <h2
+                id="host-password-title"
+                className="text-xl font-semibold text-gray-900"
+              >
+                Host Authentication
+              </h2>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsHostPasswordOpen(false);
+                  setHostPasswordError("");
+                }}
+                aria-label="Close modal"
+                className="rounded px-3 py-1 text-2xl text-gray-600 hover:bg-gray-100"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleHostPasswordSubmit}>
+              <div className="space-y-5">
+                <div>
+                  <label
+                    htmlFor="host-password"
+                    className="mb-2 block font-medium text-gray-800"
+                  >
+                    Enter Password
+                  </label>
+
+                  <input
+                    id="host-password"
+                    type="password"
+                    placeholder="Enter host password"
+                    value={hostPassword}
+                    onChange={(event) => {
+                      setHostPassword(event.target.value);
+                      setHostPasswordError("");
+                    }}
+                    className="w-full rounded-lg border border-gray-300 bg-white p-3 text-gray-900 outline-none focus:border-blue-600"
+                    autoFocus
+                    required
+                  />
+                </div>
+
+                {hostPasswordError && (
+                  <p role="alert" className="text-sm text-red-600">
+                    {hostPasswordError}
+                  </p>
+                )}
+              </div>
+
+              {/* Modal Buttons */}
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="submit"
+                  className="flex-1 rounded-lg bg-blue-900 px-4 py-3 font-medium text-white hover:bg-blue-950"
+                >
+                  Join
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsHostPasswordOpen(false);
+                    setHostPassword("");
+                    setHostPasswordError("");
+                  }}
+                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-3 font-medium text-gray-700 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

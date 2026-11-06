@@ -11,6 +11,7 @@ import { IoMdSettings } from "react-icons/io";
 import { MdCallEnd } from "react-icons/md";
 import { useNavigate } from 'react-router-dom';
 import { LuScreenShare } from "react-icons/lu";
+import { FaUserCog } from "react-icons/fa";
 import SocketContext from '../contexts/SocketContext';
 import VideoCard from '../components/VideoCard';
 import {
@@ -18,6 +19,7 @@ import {
   leaveConference,
   replaceLocalTrack,
 } from "../modules/sfu";
+import HostContext from '../contexts/HostContext';
 
 function Room() {
 
@@ -25,6 +27,7 @@ function Room() {
   const { isMicOn, setIsMicOn } = useContext(MicContext);
   const { isCameraOn, setIsCameraOn } = useContext(CameraContext);
   const { myStream, setMyStream } = useContext(MyStreamContext);
+  const { isHost, setIsHost } = useContext(HostContext);
 
   const [remoteTracks, setRemoteTracks] = useState([]);
   const [connectionError, setConnectionError] = useState("");
@@ -39,6 +42,13 @@ function Room() {
   const [selectedCameraId, setSelectedCameraId] = useState("");
 
   const [deviceError, setDeviceError] = useState("");
+
+  const [isHostControlsOpen, setIsHostControlsOpen] = useState(false);
+
+  const [allowJoin, setAllowJoin] = useState(false);
+  const [allowVideo, setAllowVideo] = useState(false);
+  const [allowAudio, setAllowAudio] = useState(false);
+  const [allowScreenShare, setAllowScreenShare] = useState(false);
 
   const [gridCols, setGridCols] = useState([1, 1, 2, 2, 2, 3, 3, 3, 4, 3, 4]);
   const [gridRows, setGridRows] = useState([1, 1, 1, 2, 2, 2, 2, 3, 2, 3, 3]);
@@ -382,13 +392,13 @@ function Room() {
         <div className="w-full h-full relative min-h-0 min-w-0 overflow-hidden grid gap-2"
           style={{
             gridTemplateColumns: `repeat(${window.innerWidth < 640
-                ? gridMobileCols[index + 1]
-                : gridCols[index + 1]
+              ? gridMobileCols[index + 1]
+              : gridCols[index + 1]
               }, minmax(0, 1fr))`,
 
             gridTemplateRows: `repeat(${window.innerWidth < 640
-                ? gridMobileRows[index + 1]
-                : gridRows[index + 1]
+              ? gridMobileRows[index + 1]
+              : gridRows[index + 1]
               }, minmax(0, 1fr))`,
           }}
         >
@@ -403,6 +413,7 @@ function Room() {
             key={"local"}
             username={username}
             stream={myStream}
+            isLocal={true}
           />
         </div>
         {/* <div className='w-64 h-36 absolute bottom-2 right-2 rounded'>
@@ -419,11 +430,14 @@ function Room() {
       </div>
       <div className='w-full h-16 flex justify-center my-2'>
         <div className='flex justify-center gap-5 bg-gray-300 p-3 rounded'>
-          <button className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer hover:bg-blue-950' onClick={handleMicToggle}>{!isMicOn ? <IoMdMicOff /> : <IoMdMic />}</button>
-          <button className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer hover:bg-blue-950' onClick={handleCameraToggle}>{!isCameraOn ? <BsCameraVideoOffFill /> : <BsCameraVideoFill />}</button>
-          <button className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer hover:bg-blue-950' ><LuScreenShare /></button>
+          <button title="Microphone" className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer hover:bg-blue-950' onClick={handleMicToggle}>{!isMicOn ? <IoMdMicOff /> : <IoMdMic />}</button>
+          <button title="Camera" className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer hover:bg-blue-950' onClick={handleCameraToggle}>{!isCameraOn ? <BsCameraVideoOffFill /> : <BsCameraVideoFill />}</button>
+          <button title="Presentation" className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer hover:bg-blue-950' ><LuScreenShare /></button>
           <button type="button" title="Settings" onClick={() => setIsSettingsOpen(true)} className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer hover:bg-blue-950' ><IoMdSettings /></button>
-          <button className='text-2xl p-2 bg-red-500 text-white rounded hover:cursor-pointer hover:bg-red-900' onClick={handleCallEnd}><MdCallEnd /></button>
+          {
+            isHost && <button type="button" title="Host Controls" onClick={() => setIsHostControlsOpen(true)} className='text-2xl p-2 bg-blue-900 text-white rounded hover:cursor-pointer hover:bg-blue-950' ><FaUserCog /></button>
+          }
+          <button title="End Call" className='text-2xl p-2 bg-red-500 text-white rounded hover:cursor-pointer hover:bg-red-900' onClick={handleCallEnd}><MdCallEnd /></button>
           {isSettingsOpen && (
             <div
               className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -541,6 +555,140 @@ function Room() {
                 <button
                   type="button"
                   onClick={() => setIsSettingsOpen(false)}
+                  className="mt-6 w-full rounded-lg bg-blue-900 px-4 py-3 font-medium text-white hover:bg-blue-950"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isHostControlsOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  setIsHostControlsOpen(false);
+                }
+              }}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="host-controls-title"
+                className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+              >
+                {/* Header */}
+                <div className="mb-6 flex items-center justify-between">
+                  <h2
+                    id="host-controls-title"
+                    className="text-xl font-semibold text-gray-900"
+                  >
+                    Host Controls
+                  </h2>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsHostControlsOpen(false)}
+                    aria-label="Close host controls"
+                    className="rounded px-3 py-1 text-2xl text-gray-600 hover:bg-gray-100"
+                  >
+                    &times;
+                  </button>
+                </div>
+
+                <div className="space-y-5">
+
+                  {/* Allow Join */}
+                  <div className="flex items-center justify-between gap-4">
+                    <label className="font-medium text-gray-800">
+                      Allow other users to join
+                    </label>
+
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={allowJoin}
+                      onClick={() => setAllowJoin(!allowJoin)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ${allowJoin ? "bg-blue-900" : "bg-gray-300"
+                        }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${allowJoin ? "translate-x-6" : "translate-x-1"
+                          }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Allow Video */}
+                  <div className="flex items-center justify-between gap-4">
+                    <label className="font-medium text-gray-800">
+                      Allow other users to turn on their video
+                    </label>
+
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={allowVideo}
+                      onClick={() => setAllowVideo(!allowVideo)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ${allowVideo ? "bg-blue-900" : "bg-gray-300"
+                        }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${allowVideo ? "translate-x-6" : "translate-x-1"
+                          }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Allow Audio */}
+                  <div className="flex items-center justify-between gap-4">
+                    <label className="font-medium text-gray-800">
+                      Allow other users to turn on their audio
+                    </label>
+
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={allowAudio}
+                      onClick={() => setAllowAudio(!allowAudio)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ${allowAudio ? "bg-blue-900" : "bg-gray-300"
+                        }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${allowAudio ? "translate-x-6" : "translate-x-1"
+                          }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Allow Screen Share */}
+                  <div className="flex items-center justify-between gap-4">
+                    <label className="font-medium text-gray-800">
+                      Allow other users to present their screen
+                    </label>
+
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={allowScreenShare}
+                      onClick={() => setAllowScreenShare(!allowScreenShare)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ${allowScreenShare ? "bg-blue-900" : "bg-gray-300"
+                        }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${allowScreenShare ? "translate-x-6" : "translate-x-1"
+                          }`}
+                      />
+                    </button>
+                  </div>
+
+                </div>
+
+                {/* Done Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsHostControlsOpen(false)}
                   className="mt-6 w-full rounded-lg bg-blue-900 px-4 py-3 font-medium text-white hover:bg-blue-950"
                 >
                   Done
